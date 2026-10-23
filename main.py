@@ -8,6 +8,7 @@ from aiogram.fsm.context import FSMContext
 from aiogram.fsm.state import State, StatesGroup
 from aiogram.fsm.storage.memory import MemoryStorage
 from aiogram.types import InlineKeyboardButton, InlineKeyboardMarkup, WebAppInfo
+from aiohttp import web
 
 TOKEN = "8853171720:AAEL0IESsyKmkwA-D8oTw9vKTe5ocfh3RQM"
 ADMIN_ID = 1226163770
@@ -196,7 +197,7 @@ async def buy_premium(callback: types.CallbackQuery):
     await callback.answer(f"🎉 Tabriklaymiz! {days} kunlik Premium faollashdi!", show_alert=True)
     await premium_menu(callback)
 
-# --- HISOBNI TO'LDIRISH (KARTA RAQAMI MAVJUD) ---
+# --- HISOBNI TO'LDIRISH ---
 @dp.callback_query(F.data == "deposit_balance")
 async def start_deposit(callback: types.CallbackQuery, state: FSMContext):
     await callback.answer()
@@ -279,7 +280,7 @@ async def reject_payment(callback: types.CallbackQuery):
     except Exception: pass
 
 
-# --- YASHIRIN ADMIN PANEL (/admin) ---
+# --- ADMIN PANEL ---
 @dp.message(Command("admin"))
 async def cmd_admin(message: types.Message, state: FSMContext):
     if message.from_user.id != ADMIN_ID: return
@@ -304,13 +305,13 @@ async def cb_admin_panel(callback: types.CallbackQuery, state: FSMContext):
     await callback.message.edit_text("⚡️ **Admin Boshqaruv Markazi**", reply_markup=admin_kb(), parse_mode="Markdown")
 
 
-# --- QISMLARNI KETMA-KET YUKLASH (BULK UPLOAD) ---
+# --- QISMLARNI YUKLASH ---
 @dp.callback_query(F.data == "admin_add_bulk")
 async def start_add_bulk(callback: types.CallbackQuery, state: FSMContext):
     await callback.answer()
     if callback.from_user.id != ADMIN_ID: return
     await state.set_state(MovieBulkAddState.waiting_for_title)
-    await callback.message.answer("🎬 **1-Qadam:** Serial nomini kiriting (masalan: *Qashqirlar Makoni*):", parse_mode="Markdown")
+    await callback.message.answer("🎬 **1-Qadam:** Serial nomini kiriting:", parse_mode="Markdown")
 
 @dp.message(MovieBulkAddState.waiting_for_title)
 async def p_bulk_title(message: types.Message, state: FSMContext):
@@ -332,21 +333,17 @@ async def p_bulk_type(callback: types.CallbackQuery, state: FSMContext):
     
     kb = InlineKeyboardMarkup(inline_keyboard=[[InlineKeyboardButton(text="🏁 Yuklashni yakunlash", callback_data="finish_bulk")]])
     await callback.message.edit_text(
-        "📤 **3-Qadam:** Serial qismlarini (video yoki fayl ko'rinishida) **ketma-ket yuboravering!**\n\n"
-        "💡 *Har bir yuborgan videoingiz navbati bilan 1-Qism, 2-Qism, 3-Qism deb saqlanib boradi.*\n"
-        "Yuklab bo'lgach, pastdagi **'🏁 Yuklashni yakunlash'** tugmasini bosing.",
+        "📤 **3-Qadam:** Serial qismlarini video ko'rinishida yuboravering!\n"
+        "Tugatgach 'Yuklashni yakunlash' tugmasini bosing.",
         reply_markup=kb,
         parse_mode="Markdown"
     )
 
 @dp.message(MovieBulkAddState.waiting_for_videos)
 async def p_bulk_video(message: types.Message, state: FSMContext):
-    file_id = None
-    if message.video: file_id = message.video.file_id
-    elif message.document: file_id = message.document.file_id
-
+    file_id = message.video.file_id if message.video else (message.document.file_id if message.document else None)
     if not file_id:
-        await message.answer("❌ Iltimos, video yoki video-fayl yuboring!")
+        await message.answer("❌ Iltimos, video yuboring!")
         return
 
     data = await state.get_data()
@@ -360,13 +357,7 @@ async def p_bulk_video(message: types.Message, state: FSMContext):
     conn.commit()
 
     kb = InlineKeyboardMarkup(inline_keyboard=[[InlineKeyboardButton(text="🏁 Yuklashni yakunlash", callback_data="finish_bulk")]])
-    type_str = "💎 Pullik" if data.get("is_paid") else "🟢 Bepul"
-    await message.answer(
-        f"✅ **{current_count}-Qism saqlandi!** ({type_str})\n\n"
-        f"👉 Keyingi ({current_count + 1}-Qism) videosini yuboring yoki yuklashni tugatish uchun tugmani bosing:",
-        reply_markup=kb,
-        parse_mode="Markdown"
-    )
+    await message.answer(f"✅ **{current_count}-Qism saqlandi!** Keyingisini yuboring:", reply_markup=kb, parse_mode="Markdown")
 
 @dp.callback_query(F.data == "finish_bulk")
 async def finish_bulk(callback: types.CallbackQuery, state: FSMContext):
@@ -374,12 +365,11 @@ async def finish_bulk(callback: types.CallbackQuery, state: FSMContext):
     data = await state.get_data()
     total = data.get("count", 0)
     await state.clear()
-    
     kb = InlineKeyboardMarkup(inline_keyboard=[[InlineKeyboardButton(text="⚙️ Admin Panel", callback_data="admin_panel")]])
-    await callback.message.edit_text(f"🎉 **Yuklash yakunlandi!**\n\nJami **{total} ta qism** muvaffaqiyatli saqlandi.", reply_markup=kb, parse_mode="Markdown")
+    await callback.message.edit_text(f"🎉 **Yuklash yakunlandi!** Jami {total} ta qism saqlandi.", reply_markup=kb, parse_mode="Markdown")
 
 
-# --- KANALLAR BOSHQARUVI ---
+# --- KANALLAR ---
 @dp.callback_query(F.data == "admin_channels")
 async def admin_channels(callback: types.CallbackQuery, state: FSMContext):
     await callback.answer()
@@ -392,27 +382,26 @@ async def admin_channels(callback: types.CallbackQuery, state: FSMContext):
     for ch_id, ch_name in channels:
         kb.append([InlineKeyboardButton(text=f"❌ O'chirish: {ch_name}", callback_data=f"del_ch_{ch_id}")])
     kb.append([InlineKeyboardButton(text="◀️ Admin Panel", callback_data="admin_panel")])
-    
-    await callback.message.edit_text(f"📢 **Majburiy Kanallar (Jami: {len(channels)} ta):**", reply_markup=InlineKeyboardMarkup(inline_keyboard=kb), parse_mode="Markdown")
+    await callback.message.edit_text(f"📢 **Majburiy Kanallar:**", reply_markup=InlineKeyboardMarkup(inline_keyboard=kb), parse_mode="Markdown")
 
 @dp.callback_query(F.data == "add_channel")
 async def start_add_channel(callback: types.CallbackQuery, state: FSMContext):
     await callback.answer()
     if callback.from_user.id != ADMIN_ID: return
     await state.set_state(ChannelAddState.waiting_for_id)
-    await callback.message.answer("📌 **1-Qadam:** Kanal ID raqamini kiriting (masalan: `-1001234567890`):", parse_mode="Markdown")
+    await callback.message.answer("📌 Kanal ID raqamini kiriting (masalan: `-100...`):", parse_mode="Markdown")
 
 @dp.message(ChannelAddState.waiting_for_id)
 async def p_ch_id(message: types.Message, state: FSMContext):
     await state.update_data(id=message.text.strip())
     await state.set_state(ChannelAddState.waiting_for_url)
-    await message.answer("🔗 **2-Qadam:** Kanal havolasini (Link) kiriting:", parse_mode="Markdown")
+    await message.answer("🔗 Kanal havolasini kiriting:", parse_mode="Markdown")
 
 @dp.message(ChannelAddState.waiting_for_url)
 async def p_ch_url(message: types.Message, state: FSMContext):
     await state.update_data(url=message.text.strip())
     await state.set_state(ChannelAddState.waiting_for_name)
-    await message.answer("📝 **3-Qadam:** Kanal nomini kiriting:", parse_mode="Markdown")
+    await message.answer("📝 Kanal nomini kiriting:", parse_mode="Markdown")
 
 @dp.message(ChannelAddState.waiting_for_name)
 async def p_ch_name(message: types.Message, state: FSMContext):
@@ -421,7 +410,7 @@ async def p_ch_name(message: types.Message, state: FSMContext):
                    (data.get("id"), data.get("url"), message.text.strip()))
     conn.commit()
     await state.clear()
-    await message.answer("✅ **Kanal qo'shildi!**", reply_markup=InlineKeyboardMarkup(inline_keyboard=[[InlineKeyboardButton(text="⚙️ Kanallar", callback_data="admin_channels")]]))
+    await message.answer("✅ Kanal qo'shildi!", reply_markup=InlineKeyboardMarkup(inline_keyboard=[[InlineKeyboardButton(text="⚙️ Kanallar", callback_data="admin_channels")]]))
 
 @dp.callback_query(F.data.startswith("del_ch_"))
 async def execute_del_channel(callback: types.CallbackQuery, state: FSMContext):
@@ -431,7 +420,8 @@ async def execute_del_channel(callback: types.CallbackQuery, state: FSMContext):
     conn.commit()
     await admin_channels(callback, state)
 
-# --- QISMNI O'CHIRISH, BROADCAST, STATISTIKA ---
+
+# --- BOSHQA ADMIN FUNKSIYALARI ---
 @dp.callback_query(F.data == "admin_delete")
 async def start_delete(callback: types.CallbackQuery):
     await callback.answer()
@@ -484,40 +474,32 @@ async def show_stats(callback: types.CallbackQuery):
     m_count = cursor.fetchone()[0]
     cursor.execute("SELECT COUNT(*) FROM channels")
     c_count = cursor.fetchone()[0]
-    await callback.message.edit_text(f"📊 **Statistika:**\n\n👥 Foydalanuvchilar: {u_count} ta\n📺 Serial qismlari: {m_count} ta\n📢 Kanallar: {c_count} ta", reply_markup=InlineKeyboardMarkup(inline_keyboard=[[InlineKeyboardButton(text="◀️ Orqaga", callback_data="admin_panel")]]), parse_mode="Markdown")
+    await callback.message.edit_text(f"📊 **Statistika:**\n\n👥 Foydalanuvchilar: {u_count}\n📺 Qismlar: {m_count}\n📢 Kanallar: {c_count}", reply_markup=InlineKeyboardMarkup(inline_keyboard=[[InlineKeyboardButton(text="◀️ Orqaga", callback_data="admin_panel")]]), parse_mode="Markdown")
 
 
-# --- DYNAMIC QISMLAR TUGMALARI ---
+# --- QISM YUBORISH ---
 def build_episodes_keyboard():
     cursor.execute("SELECT movie_code, is_paid FROM movies ORDER BY movie_code ASC")
     movies = cursor.fetchall()
     if not movies: return None
-
-    row = []
-    keyboard = []
+    row, keyboard = [], []
     for code, is_paid in movies:
         badge = "💎" if is_paid else ""
-        btn_text = f"{code}-Qism {badge}".strip()
-        row.append(InlineKeyboardButton(text=btn_text, callback_data=f"get_ep_{code}"))
-        
+        row.append(InlineKeyboardButton(text=f"{code}-Qism {badge}".strip(), callback_data=f"get_ep_{code}"))
         if len(row) == 3:
             keyboard.append(row)
             row = []
     if row: keyboard.append(row)
-
     return InlineKeyboardMarkup(inline_keyboard=keyboard)
 
-# --- QISM YUBORISH ---
 async def send_episode_to_user(message_or_callback, episode_code: str):
     user_id = message_or_callback.from_user.id
-
     if not await check_subscriptions(user_id):
         await send_sub_request(message_or_callback)
         return
 
     cursor.execute("SELECT title, description, file_id, is_paid FROM movies WHERE movie_code = ?", (episode_code,))
     movie = cursor.fetchone()
-
     if not movie:
         text = "❌ Bunday raqamli qism topilmadi."
         if isinstance(message_or_callback, types.CallbackQuery):
@@ -527,17 +509,13 @@ async def send_episode_to_user(message_or_callback, episode_code: str):
         return
 
     title, desc, file_id, is_paid = movie
-
-    # Premium tekshiruvi
     if is_paid == 1:
         cursor.execute("SELECT premium_until FROM users WHERE user_id = ?", (user_id,))
         row = cursor.fetchone()
         prem_until = float(row[0]) if row and row[0] != "0" else 0
-        
         if prem_until <= time.time():
             kb = InlineKeyboardMarkup(inline_keyboard=[[InlineKeyboardButton(text="💎 Premium sotib olish", callback_data="premium_menu")]])
-            text = f"🔒 **{title} ({episode_code}-Qism)** faqat Premium obunachilar uchun!\n\nQolgan pullik qismlarni tomosha qilish uchun Premium obuna xarid qiling."
-            
+            text = f"🔒 **{title} ({episode_code}-Qism)** faqat Premium obunachilar uchun!"
             if isinstance(message_or_callback, types.CallbackQuery):
                 await message_or_callback.message.answer(text, reply_markup=kb, parse_mode="Markdown")
             else:
@@ -546,41 +524,24 @@ async def send_episode_to_user(message_or_callback, episode_code: str):
 
     caption = f"🎬 **{title}** ({episode_code}-Qism)"
     episodes_kb = build_episodes_keyboard()
+    target = message_or_callback.message if isinstance(message_or_callback, types.CallbackQuery) else message_or_callback
+    try:
+        await target.answer_video(video=file_id, caption=caption, reply_markup=episodes_kb, parse_mode="Markdown")
+    except Exception:
+        await target.answer_document(document=file_id, caption=caption, reply_markup=episodes_kb, parse_mode="Markdown")
 
-    if isinstance(message_or_callback, types.CallbackQuery):
-        try:
-            await message_or_callback.message.answer_video(video=file_id, caption=caption, reply_markup=episodes_kb, parse_mode="Markdown")
-        except Exception:
-            await message_or_callback.message.answer_document(document=file_id, caption=caption, reply_markup=episodes_kb, parse_mode="Markdown")
-    else:
-        try:
-            await message_or_callback.answer_video(video=file_id, caption=caption, reply_markup=episodes_kb, parse_mode="Markdown")
-        except Exception:
-            await message_or_callback.answer_document(document=file_id, caption=caption, reply_markup=episodes_kb, parse_mode="Markdown")
-
-# --- HANDLERLAR ---
 @dp.callback_query(F.data.startswith("get_ep_"))
 async def handle_ep_button(callback: types.CallbackQuery):
     await callback.answer()
-    ep_code = callback.data.replace("get_ep_", "")
-    await send_episode_to_user(callback, ep_code)
+    await send_episode_to_user(callback, callback.data.replace("get_ep_", ""))
 
 @dp.message(F.text & ~F.text.startswith("/"))
 async def handle_movie_code(message: types.Message, state: FSMContext):
     if await state.get_state() is not None: return
     await send_episode_to_user(message, message.text.strip())
 
-async def main():
-    await dp.start_polling(bot, allowed_updates=dp.resolve_used_update_types())
 
-if __name__ == "__main__":
-    asyncio.run(main())
-
-
-import asyncio
-from aiohttp import web
-
-# --- Render uchun kichik web server (Keep-Alive) ---
+# --- RENDER WEB SERVER (KEEP-ALIVE) ---
 async def handle(request):
     return web.Response(text="Bot 24/7 ishlamoqda!")
 
@@ -593,48 +554,8 @@ async def start_web_server():
     await site.start()
 
 async def main():
-    # Web server va botni birga ishga tushirish
     await start_web_server()
     await dp.start_polling(bot, allowed_updates=dp.resolve_used_update_types())
 
 if __name__ == "__main__":
     asyncio.run(main())
-
-
-
-
-import os
-import logging
-from aiohttp import web
-from aiogram import Bot, Dispatcher, executor, types
-
-# Bot tokeningiz
-TOKEN = os.getenv("BOT_TOKEN", "SIZNING_TOKENINGIZ")
-
-bot = Bot(token=TOKEN)
-dp = Dispatcher(bot)
-
-# --- SIZNING MAVJUD BOT KODLARINGIZ (handlers, start buyrug'i va h.k.) ---
-@dp.message_handler(commands=['start'])
-async def send_welcome(message: types.Message):
-    await message.reply("Salom! Bot uzluksiz ishlamoqda!")
-
-# ------------------------------------------------------------------------
-
-# Render uchun kichik web-server (Port tinglash uchun)
-async def handle(request):
-    return web.Response(text="Bot 24/7 ishlamoqda!")
-
-async def on_startup(dp):
-    app = web.Application()
-    app.router.add_get("/", handle)
-    runner = web.AppRunner(app)
-    await runner.setup()
-    
-    # Render avtomatik beradigan PORT o'zgaruvchisi
-    port = int(os.getenv("PORT", 8080))
-    site = web.TCPSite(runner, "0.0.0.0", port)
-    await site.start()
-
-if __name__ == "__main__":
-    executor.start_polling(dp, on_startup=on_startup, skip_updates=True)
