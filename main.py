@@ -541,7 +541,7 @@ async def handle_movie_code(message: types.Message, state: FSMContext):
     await send_episode_to_user(message, message.text.strip())
 
 
-# --- RENDER WEB SERVER (KEEP-ALIVE) ---
+# --- RENDER WEB SERVER VA BOTNI BIRGA ISHGA TUSHIRISH ---
 async def handle(request):
     return web.Response(text="Bot 24/7 ishlamoqda!")
 
@@ -554,8 +554,11 @@ async def start_web_server():
     await site.start()
 
 async def main():
-    await start_web_server()
-    await dp.start_polling(bot, allowed_updates=dp.resolve_used_update_types())
+    # Veb-server va Telegram botni bir vaqtning o'zida bitta event loop'da ishga tushiramiz
+    await asyncio.gather(
+        start_web_server(),
+        dp.start_polling(bot, allowed_updates=dp.resolve_used_update_types())
+    )
 
 if __name__ == "__main__":
     asyncio.run(main())
